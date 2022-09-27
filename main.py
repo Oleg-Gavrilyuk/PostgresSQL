@@ -1,7 +1,7 @@
 import psycopg2
 
 
-def create_db(conn):
+def create_db(cur):
     clients = ("""
         CREATE TABLE IF NOT EXISTS clients(
             id SERIAL PRIMARY KEY,
@@ -17,106 +17,111 @@ def create_db(conn):
             clients_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE
         );
     """)
-    with conn.cursor() as cur:
-        cur.execute(clients)
-        cur.execute(phones)
-        conn.commit()
+    cur.execute(clients)
+    cur.execute(phones)
 
 
-def add_client(conn, name, surname, email, phones=None):
-    with conn.cursor() as cur:
+def add_client(cur, name, surname, email, phones=None):
+    cur.execute("""
+        INSERT INTO clients(name, surname, email) VALUES (%s, %s, %s);  
+    """, (name, surname, email))
+
+    if phones:
         cur.execute("""
-            INSERT INTO clients(name, surname, email) VALUES (%s, %s, %s);  
-        """, (name, surname, email))
-
-        if phones:
+            SELECT id FROM clients WHERE name = %s AND surname = %s AND email = %s;
+            """, (name, surname, email))
+        clients_id = cur.fetchone()[0]
+        for phone in phones:
             cur.execute("""
-                SELECT id FROM clients WHERE name = %s AND surname = %s AND email = %s;
-                """, (name, surname, email))
-            clients_id = cur.fetchone()[0]
-            for phone in phones:
-                cur.execute("""
-                    INSERT INTO phones(clients_id, phone) VALUES (%s, %s);
-                """, (clients_id, phone))
-        conn.commit()
+                INSERT INTO phones(clients_id, phone) VALUES (%s, %s);
+            """, (clients_id, phone))
+    # conn.commit()
 
 
-def add_phone(conn, client_id, phone):
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO phones(clients_id, phone) VALUES (%s, %s);
-        """, (client_id, phone))
-        conn.commit()
+def add_phone(cur, client_id, phone):
+    cur.execute("""
+        INSERT INTO phones(clients_id, phone) VALUES (%s, %s);
+    """, (client_id, phone))
 
 
-def update_client(conn, client_id, name=None, surname=None, email=None, phones=None):
-    with conn.cursor() as cur:
+def update_client(cur, client_id, name=None, surname=None, email=None, phones=None):
+    if name:
         cur.execute("""
             UPDATE clients
-            SET name = %s, surname = %s, email = %s
+            SET name = %s
             WHERE id = %s;
-        """, (name, surname, email, client_id))
-        if phones:
-            cur.execute("""
-                DELETE FROM phones
-                WHERE clients_id = %s;
-            """, (client_id,))
-            for phone in phones:
-                cur.execute("""
-                    INSERT INTO phones (clients_id, phone)
-                    VALUES (%s, %s);
-                """, (client_id, phone))
-        conn.commit()
-
-
-def delete_phone(conn, phone):
-    with conn.cursor() as cur:
+        """, (name, client_id))
+    if surname:
         cur.execute("""
-            DELETE FROM phones WHERE phone = %s;
-        """, (phone,))
-        conn.commit()
-
-
-def delete_client(conn, client_id):
-    with conn.cursor() as cur:
+               UPDATE clients
+               SET surname = %s
+               WHERE id = %s;
+           """, (surname, client_id))
+    if email:
+        cur.execute("""
+               UPDATE clients
+               SET email = %s
+               WHERE id = %s;
+           """, (email, client_id))
+    if phones:
         cur.execute("""
             DELETE FROM phones
             WHERE clients_id = %s;
         """, (client_id,))
+        for phone in phones:
+            cur.execute("""
+                INSERT INTO phones (clients_id, phone)
+                VALUES (%s, %s);
+            """, (client_id, phone))
+
+
+def delete_phone(cur, phone):
+    cur.execute("""
+        DELETE FROM phones WHERE phone = %s;
+    """, (phone,))
+
+
+def delete_client(cur, client_id):
+    cur.execute("""
+        DELETE FROM phones
+        WHERE clients_id = %s;
+    """, (client_id,))
+    cur.execute("""
+        DELETE FROM clients
+        WHERE id = %s;
+    """, (client_id,))
+
+
+
+def search_client(cur, name=None, surname=None, email=None, phone=None):
+    if phone:
         cur.execute("""
-            DELETE FROM clients
-            WHERE id = %s;
-        """, (client_id,))
-        conn.commit()
-
-
-
-def search_client(conn, name=None, surname=None, email=None, phone=None):
-    with conn.cursor() as cur:
-        if phone:
-            cur.execute("""
-                SELECT clients_id FROM phones
-                WHERE phone = %s;
-            """, (phone,))
-            print(cur.fetchone())
-        else:
-            cur.execute("""
-                SELECT id FROM clients
-                WHERE name = %s AND surname = %s AND email = %s;
-            """, (name, surname, email))
-            user_ID = cur.fetchone()[0]
-            print(f'ID = {user_ID}')
-
+            SELECT clients_id FROM phones
+            WHERE phone = %s;
+        """, (phone,))
+        print(cur.fetchone())
+    else:
+        cur.execute("""
+            SELECT id FROM clients
+            WHERE name = %s OR surname = %s OR email = %s;
+        """, (name, surname, email))
+        user_ID = cur.fetchall()
+        lst_id = []
+        for i in user_ID:
+            lst_id += list(i)
+        print(*lst_id, sep=', ')
 
 if __name__ == "__main__":
-    with psycopg2.connect(database="clients", user="postgres", password="postgres") as conn:
-        create_db(conn)
-        add_client(conn, 'Олег','Гаврилюк','меил',['+79101473956'])
-        add_client(conn, 'Илья', 'Феоктистов', 'меил2', ['+79101473999'])
-        add_client(conn, 'Денис', 'Сорокин', 'меил3', ['+79101477777'])
-        add_phone(conn, 3, ['+79102635455'])
-        update_client(conn, 3,'Сергей','Иванов','Мейлру',['+7999123222'])
-        delete_phone(conn, '+79101473999')
-        delete_client(conn, 2)
-        search_client(conn, 'Денис','Сорокин', 'меил3')
+    with psycopg2.connect(database="clients", user="postgres", password="Gavrilyuk161090!") as conn:
+        with conn.cursor() as cur:
+            create_db(cur)
+            add_client(cur, 'Олег','Гаврилюк','меил',['+79101473956'])
+            add_client(cur, 'Илья', 'Феоктистов', 'меил2', ['+79101473999'])
+            add_client(cur, 'Денис', 'Сорокин', 'меил3', ['+79101477777'])
+            add_phone(cur, 3, ['+79102635455'])
+            update_client(cur, 3,'Сергей','Носов','Мейл',['+7999123222'])
+            delete_phone(cur, '+79101473999')
+            delete_client(cur, 2)
+            search_client(cur, 'Денис','Сорокин', 'меил3')
+            search_client(cur, 'Денис', None, None)
     conn.close()
